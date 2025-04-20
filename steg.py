@@ -62,25 +62,35 @@ from io import BytesIO
 
 def encode_image(img, message, password):
     """Hide message in image with password protection"""
-    if img.mode != 'RGB':
-        img = img.convert('RGB')
+    try:
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        message += "%%%"
+        binary_msg = ''.join([format(ord(c), '08b') for c in (password + message)])
+        
+        pixels = np.array(img)
+        if len(binary_msg) > pixels.size:
+            raise ValueError("Message too long for image")
+        
+        # Convert to int32 to prevent overflow
+        pixels = pixels.astype(np.int32)
+        
+        idx = 0
+        for row in pixels:
+            for pixel in row:
+                for i in range(3):  # R,G,B channels
+                    if idx < len(binary_msg):
+                        # Safely modify pixel value
+                        new_val = (pixel[i] & ~1) | int(binary_msg[idx])
+                        pixel[i] = np.clip(new_val, 0, 255)
+                        idx += 1
+        
+        # Convert back to uint8 before saving
+        return Image.fromarray(pixels.astype(np.uint8))
     
-    message += "%%%"
-    binary_msg = ''.join([format(ord(c), '08b') for c in (password + message)])
-    
-    pixels = np.array(img)
-    if len(binary_msg) > pixels.size:
-        raise ValueError("Message too long for image")
-    
-    idx = 0
-    for row in pixels:
-        for pixel in row:
-            for i in range(3):
-                if idx < len(binary_msg):
-                    pixel[i] = pixel[i] & ~1 | int(binary_msg[idx])
-                    idx += 1
-    
-    return Image.fromarray(pixels)
+    except Exception as e:
+        raise ValueError(f"Encoding error: {str(e)}")
 
 def decode_image(img, password):
     """Extract message from image with password"""
